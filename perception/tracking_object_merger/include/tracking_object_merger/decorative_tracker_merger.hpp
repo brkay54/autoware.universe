@@ -20,6 +20,7 @@
 #include "tracking_object_merger/utils/utils.hpp"
 
 #include <rclcpp/rclcpp.hpp>
+#include <tier4_autoware_utils/ros/published_time_publisher.hpp>
 
 #include <autoware_auto_perception_msgs/msg/tracked_objects.hpp>
 #include <std_msgs/msg/header.hpp>
@@ -105,6 +106,8 @@ private:
 
   // tracker default settings
   TrackerStateParameter tracker_state_parameter_;
+
+  std::unique_ptr<tier4_autoware_utils::PublishedTimePublisher> published_time_publisher_;
 
   // merge policy (currently not used)
   struct

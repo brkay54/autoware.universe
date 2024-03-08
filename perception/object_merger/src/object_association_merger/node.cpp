@@ -118,6 +118,8 @@ ObjectAssociationMergerNode::ObjectAssociationMergerNode(const rclcpp::NodeOptio
 
   merged_object_pub_ = create_publisher<autoware_auto_perception_msgs::msg::DetectedObjects>(
     "output/object", rclcpp::QoS{1});
+
+  published_time_publisher_ = std::make_unique<tier4_autoware_utils::PublishedTimePublisher>(this);
 }
 
 void ObjectAssociationMergerNode::objectsCallback(
@@ -215,6 +217,11 @@ void ObjectAssociationMergerNode::objectsCallback(
 
   // publish output msg
   merged_object_pub_->publish(output_msg);
+
+  // Publish published time if enabled by parameter
+  if (published_time_publisher_) {
+    published_time_publisher_->publish(merged_object_pub_, output_msg.header.stamp);
+  }
 }
 }  // namespace object_association
 

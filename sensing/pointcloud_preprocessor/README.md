@@ -45,14 +45,15 @@ Detail description of each filter's algorithm is in the following links.
 
 ### Node Parameters
 
-| Name               | Type   | Default Value | Description                           |
-| ------------------ | ------ | ------------- | ------------------------------------- |
-| `input_frame`      | string | " "           | input frame id                        |
-| `output_frame`     | string | " "           | output frame id                       |
-| `max_queue_size`   | int    | 5             | max queue size of input/output topics |
-| `use_indices`      | bool   | false         | flag to use pointcloud indices        |
-| `latched_indices`  | bool   | false         | flag to latch pointcloud indices      |
-| `approximate_sync` | bool   | false         | flag to use approximate sync option   |
+| Name                 | Type   | Default Value | Description                                                                  |
+| -------------------- | ------ | ------------- | ---------------------------------------------------------------------------- |
+| `input_frame`        | string | " "           | input frame id                                                               |
+| `output_frame`       | string | " "           | output frame id                                                              |
+| `max_queue_size`     | int    | 5             | max queue size of input/output topics                                        |
+| `use_indices`        | bool   | false         | flag to use pointcloud indices                                               |
+| `latched_indices`    | bool   | false         | flag to latch pointcloud indices                                             |
+| `approximate_sync`   | bool   | false         | flag to use approximate sync option                                          |
+| `use_published_time` | bool   | false         | node publishes its filtered points publishing time with pipeline header file |
 
 ## Assumptions / Known limits
 

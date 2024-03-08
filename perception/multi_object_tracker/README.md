@@ -80,6 +80,7 @@ Node parameters are defined in [multi_object_tracker.param.yaml](config/multi_ob
 | `world_frame_id`            | double | object kinematics definition frame                                                                                          |
 | `enable_delay_compensation` | bool   | if True, tracker use timers to schedule publishers and use prediction step to extrapolate object state at desired timestamp |
 | `publish_rate`              | double | Timer frequency to output with delay compensation                                                                           |
+| `use_published_time`        | bool   | Node publishes its DetectedObjects publishing time with pipeline header file. Default it is false.                          |
 
 #### Association parameters
 

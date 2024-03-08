@@ -33,6 +33,7 @@ In the debug image above, the red DetectedObject is the validated object. The bl
 | `max_points_num`                | int   | The max number of obstacle point clouds in DetectedObjects                                                                                                                 |
 | `min_points_and_distance_ratio` | float | Threshold value of the number of point clouds per object when the distance from baselink is 1m, because the number of point clouds varies with the distance from baselink. |
 | `enable_debugger`               | bool  | Whether to create debug topics or not?                                                                                                                                     |
+| `use_published_time`            | bool  | Node publishes its DetectedObjects publishing time with pipeline header file. Default it is false.                                                                         |
 
 ## Assumptions / Known limits
 

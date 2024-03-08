@@ -96,6 +96,7 @@ Default parameters are set in [config/decorative_tracker_merger.param.yaml](./co
 | `main_sensor_type`        | main sensor type. This is used to determine the dominant tracking object.                                                                                        | "lidar"       |
 | `sub_sensor_type`         | sub sensor type. This is used to determine the sub tracking object.                                                                                              | "radar"       |
 | `tracker_state_parameter` | tracker state parameter. This is used to manage the tracklet.                                                                                                    |               |
+| `use_published_time`      | node publishes its TrackedObjects publishing time with pipeline header file.                                                                                     | false         |
 
 - the detail of `tracker_state_parameter` is described in [tracklet management](#tracklet-management)
 

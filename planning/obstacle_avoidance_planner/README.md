@@ -26,9 +26,10 @@ Note that the velocity is just taken over from the input path.
 
 ### output
 
-| Name                  | Type                                       | Description                                                       |
-| --------------------- | ------------------------------------------ | ----------------------------------------------------------------- |
-| `~/output/trajectory` | autoware_auto_planning_msgs/msg/Trajectory | Optimized trajectory that is feasible to drive and collision-free |
+| Name                                       | Type                                       | Description                                                                                                       |
+| ------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `~/output/trajectory`                      | autoware_auto_planning_msgs/msg/Trajectory | Optimized trajectory that is feasible to drive and collision-free                                                 |
+| `~/output/trajectory/debug/published_time` | autoware_internal_msgs/msg/PublishedTime   | Node publishes its Trajectory publishing time with pipeline header file when `use_published_time` parameter true. |
 
 ## Flowchart
 

@@ -67,6 +67,7 @@
 | `on_transition.lon_jerk_lim`                | <double> | array of limits of longitudinal jerk (activated in TRANSITION operation mode)                                                                                                               |
 | `on_transition.lat_acc_lim`                 | <double> | array of limits of lateral acceleration (activated in TRANSITION operation mode)                                                                                                            |
 | `on_transition.lat_jerk_lim`                | <double> | array of limits of lateral jerk (activated in TRANSITION operation mode)                                                                                                                    |
+| `use_published_time`                        | bool     | Node publishes its control command publishing time with pipeline header file. Default it is false.                                                                                          |
 
 ## Filter function
 

@@ -238,6 +238,7 @@ After the optimization, a resampling called `post resampling` is performed befor
 | Name                          | Type     | Description                                                                                       | Default value |
 | :---------------------------- | :------- | :------------------------------------------------------------------------------------------------ | :------------ |
 | `over_stop_velocity_warn_thr` | `double` | Threshold to judge that the optimized velocity exceeds the input velocity on the stop point [m/s] | 1.389         |
+| `use_published_time`          | `bool`   | Node publishes its trajectory publishing time with pipeline header file. [-]                      | false         |
 
 <!-- Write parameters of this package.
 

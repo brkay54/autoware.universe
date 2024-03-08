@@ -51,6 +51,7 @@ The following video is a sample. Yellow points are high occupancy probability, g
 | `radius_search_2d_filter/min_points_and_distance_ratio` | float  | Threshold value of the number of point clouds per radius when the distance from baselink is 1m, because the number of point clouds varies with the distance from baselink.                                                     |
 | `radius_search_2d_filter/min_points`                    | int    | Minimum number of point clouds per radius                                                                                                                                                                                      |
 | `radius_search_2d_filter/max_points`                    | int    | Maximum number of point clouds per radius                                                                                                                                                                                      |
+| `use_published_time`                                    | bool   | Node publishes its PointCloud2 publishing time with pipeline header file. Default it is false.                                                                                                                                 |
 
 ## Assumptions / Known limits
 

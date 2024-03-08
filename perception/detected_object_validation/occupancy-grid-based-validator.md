@@ -28,10 +28,11 @@ If the percentage is low, it is deleted.
 
 ## Parameters
 
-| Name             | Type  | Description                                        |
-| ---------------- | ----- | -------------------------------------------------- |
-| `mean_threshold` | float | The percentage threshold of allowed non-freespace. |
-| `enable_debug`   | bool  | Whether to display debug images or not?            |
+| Name                 | Type  | Description                                                                                        |
+| -------------------- | ----- | -------------------------------------------------------------------------------------------------- |
+| `mean_threshold`     | float | The percentage threshold of allowed non-freespace.                                                 |
+| `enable_debug`       | bool  | Whether to display debug images or not?                                                            |
+| `use_published_time` | bool  | Node publishes its DetectedObjects publishing time with pipeline header file. Default it is false. |
 
 ## Assumptions / Known limits
 

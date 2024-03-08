@@ -22,6 +22,8 @@ The `detected_object_feature_remover` is a package to convert topic-type from `D
 
 ## Parameters
 
-None
+| Name                 | Type   | Description                                                                                  |
+| -------------------- | ------ | -------------------------------------------------------------------------------------------- |
+| `use_published_time` | `bool` | Node publishes its DetectedObjects publishing time with pipeline header file. Default: false |
 
 ## Assumptions / Known limits

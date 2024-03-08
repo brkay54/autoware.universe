@@ -26,16 +26,17 @@ The objects only inside of the vector map will be published.
 
 ### Core Parameters
 
-| Name                             | Type | Default Value | Description                               |
-| -------------------------------- | ---- | ------------- | ----------------------------------------- |
-| `filter_target_label.UNKNOWN`    | bool | false         | If true, unknown objects are filtered.    |
-| `filter_target_label.CAR`        | bool | false         | If true, car objects are filtered.        |
-| `filter_target_label.TRUCK`      | bool | false         | If true, truck objects are filtered.      |
-| `filter_target_label.BUS`        | bool | false         | If true, bus objects are filtered.        |
-| `filter_target_label.TRAILER`    | bool | false         | If true, trailer objects are filtered.    |
-| `filter_target_label.MOTORCYCLE` | bool | false         | If true, motorcycle objects are filtered. |
-| `filter_target_label.BICYCLE`    | bool | false         | If true, bicycle objects are filtered.    |
-| `filter_target_label.PEDESTRIAN` | bool | false         | If true, pedestrian objects are filtered. |
+| Name                             | Type | Default Value | Description                                                                   |
+| -------------------------------- | ---- | ------------- | ----------------------------------------------------------------------------- |
+| `filter_target_label.UNKNOWN`    | bool | false         | If true, unknown objects are filtered.                                        |
+| `filter_target_label.CAR`        | bool | false         | If true, car objects are filtered.                                            |
+| `filter_target_label.TRUCK`      | bool | false         | If true, truck objects are filtered.                                          |
+| `filter_target_label.BUS`        | bool | false         | If true, bus objects are filtered.                                            |
+| `filter_target_label.TRAILER`    | bool | false         | If true, trailer objects are filtered.                                        |
+| `filter_target_label.MOTORCYCLE` | bool | false         | If true, motorcycle objects are filtered.                                     |
+| `filter_target_label.BICYCLE`    | bool | false         | If true, bicycle objects are filtered.                                        |
+| `filter_target_label.PEDESTRIAN` | bool | false         | If true, pedestrian objects are filtered.                                     |
+| `use_published_time`             | bool | false         | Node publishes its DetectedObjects publishing time with pipeline header file. |
 
 ## Assumptions / Known limits
 

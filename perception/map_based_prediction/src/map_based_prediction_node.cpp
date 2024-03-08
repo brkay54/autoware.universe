@@ -818,6 +818,8 @@ MapBasedPredictionNode::MapBasedPredictionNode(const rclcpp::NodeOptions & node_
     this->create_publisher<visualization_msgs::msg::MarkerArray>("maneuver", rclcpp::QoS{1});
   pub_calculation_time_ = create_publisher<StringStamped>("~/debug/calculation_time", 1);
 
+  published_time_publisher_ = std::make_unique<tier4_autoware_utils::PublishedTimePublisher>(this);
+
   set_param_res_ = this->add_on_set_parameters_callback(
     std::bind(&MapBasedPredictionNode::onParam, this, std::placeholders::_1));
 }
@@ -1115,6 +1117,11 @@ void MapBasedPredictionNode::objectsCallback(const TrackedObjects::ConstSharedPt
 
   // Publish Results
   pub_objects_->publish(output);
+
+  if (published_time_publisher_) {
+    published_time_publisher_->publish(pub_objects_, output.header.stamp);
+  }
+
   pub_debug_markers_->publish(debug_markers);
   const auto calculation_time_msg = createStringStamped(now(), stop_watch_.toc());
   pub_calculation_time_->publish(calculation_time_msg);

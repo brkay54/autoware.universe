@@ -58,6 +58,7 @@ The following parameters can be set for the `planning_validator`:
 | `publish_diag`                     | bool | the Diag will be set to ERROR when the number of consecutive invalid trajectory exceeds this threshold. (For example, threshold = 1 means, even if the trajectory is invalid, the Diag will not be ERROR if the next trajectory is valid.) | true          |
 | `diag_error_count_threshold`       | int  | if true, diagnostics msg is published.                                                                                                                                                                                                     | true          |
 | `display_on_terminal`              | bool | show error msg on terminal                                                                                                                                                                                                                 | true          |
+| `use_published_time`               | bool | node publishes its trajectory publishing time with pipeline header file.                                                                                                                                                                   | false         |
 
 ### Algorithm parameters
 

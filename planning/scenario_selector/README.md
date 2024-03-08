@@ -17,10 +17,11 @@
 
 ### Output topics
 
-| Name                 | Type                                    | Description                                    |
-| -------------------- | --------------------------------------- | ---------------------------------------------- |
-| `~output/scenario`   | tier4_planning_msgs::Scenario           | current scenario and scenarios to be activated |
-| `~output/trajectory` | autoware_auto_planning_msgs::Trajectory | trajectory to be followed                      |
+| Name                                       | Type                                     | Description                                                                                                       |
+| ------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `~output/scenario`                         | tier4_planning_msgs::Scenario            | current scenario and scenarios to be activated                                                                    |
+| `~output/trajectory`                       | autoware_auto_planning_msgs::Trajectory  | trajectory to be followed                                                                                         |
+| `~/output/trajectory/debug/published_time` | autoware_internal_msgs/msg/PublishedTime | Node publishes its Trajectory publishing time with pipeline header file when `use_published_time` parameter true. |
 
 ### Output TFs
 

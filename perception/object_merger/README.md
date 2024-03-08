@@ -35,6 +35,7 @@ The successive shortest path algorithm is used to solve the data association pro
 | `base_link_frame_id`        | double                | association frame                                                                                                                                                                                                                     |
 | `distance_threshold_list`   | `std::vector<double>` | Distance threshold for each class used in judging overlap. The class order depends on [ObjectClassification](https://github.com/tier4/autoware_auto_msgs/blob/tier4/main/autoware_auto_perception_msgs/msg/ObjectClassification.idl). |
 | `generalized_iou_threshold` | `std::vector<double>` | Generalized IoU threshold for each class                                                                                                                                                                                              |
+| `use_published_time`        | bool                  | Node publishes its DetectedObjects publishing time with pipeline header file. Default it is false.                                                                                                                                    |
 
 ## Tips
 

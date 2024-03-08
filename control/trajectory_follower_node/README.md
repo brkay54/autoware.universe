@@ -146,6 +146,7 @@ Giving the longitudinal controller information about steer convergence allows it
     2. The last received commands are not older than defined by `timeout_thr_sec`.
 - `lateral_controller_mode`: `mpc` or `pure_pursuit`
   - (currently there is only `PID` for longitudinal controller)
+- `use_published_time`: Node publishes its control command publishing time with pipeline header file. Default it is false.
 
 ## Debugging
 

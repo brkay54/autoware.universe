@@ -151,6 +151,8 @@ DecorativeTrackerMergerNode::DecorativeTrackerMergerNode(const rclcpp::NodeOptio
   set3dDataAssociation("lidar-radar", data_association_map_);
   // radar-radar association matrix
   set3dDataAssociation("radar-radar", data_association_map_);
+
+  published_time_publisher_ = std::make_unique<tier4_autoware_utils::PublishedTimePublisher>(this);
 }
 
 void DecorativeTrackerMergerNode::set3dDataAssociation(
@@ -212,8 +214,13 @@ void DecorativeTrackerMergerNode::mainObjectsCallback(
 
   // try to merge main object
   this->decorativeMerger(main_sensor_type_, main_objects);
+  const auto & tracked_objects = getTrackedObjects(main_objects->header);
+  merged_object_pub_->publish(tracked_objects);
 
-  merged_object_pub_->publish(getTrackedObjects(main_objects->header));
+  // Published Time Publisher enabled only if the use_published_time is true
+  if (published_time_publisher_) {
+    published_time_publisher_->publish(merged_object_pub_, tracked_objects.header.stamp);
+  }
 }
 
 /**
