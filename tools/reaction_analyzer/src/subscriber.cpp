@@ -451,7 +451,8 @@ bool SubscriberBase::initSubscribers()
   return true;
 }
 
-std::optional<std::unordered_map<std::string, BufferVariant>> SubscriberBase::getMessageBuffersMap()
+std::optional<std::unordered_map<std::string, MessageBufferVariant>>
+SubscriberBase::getMessageBuffersMap()
 {
   std::lock_guard<std::mutex> lock(mutex_);
   if (message_buffers_.empty()) {
@@ -466,24 +467,8 @@ std::optional<std::unordered_map<std::string, BufferVariant>> SubscriberBase::ge
       if (!control_message->second) {
         all_reacted = false;
       }
-    } else if (auto * planning_message = std::get_if<TrajectoryBuffer>(&variant)) {
-      if (!planning_message->has_value()) {
-        all_reacted = false;
-      }
-    } else if (auto * pointcloud_message = std::get_if<PointCloud2Buffer>(&variant)) {
-      if (!pointcloud_message->has_value()) {
-        all_reacted = false;
-      }
-    } else if (auto * predicted_objects_message = std::get_if<PredictedObjectsBuffer>(&variant)) {
-      if (!predicted_objects_message->has_value()) {
-        all_reacted = false;
-      }
-    } else if (auto * detected_objects_message = std::get_if<DetectedObjectsBuffer>(&variant)) {
-      if (!detected_objects_message->has_value()) {
-        all_reacted = false;
-      }
-    } else if (auto * tracked_objects_message = std::get_if<TrackedObjectsBuffer>(&variant)) {
-      if (!tracked_objects_message->has_value()) {
+    } else if (auto * general_message = std::get_if<MessageBuffer>(&variant)) {
+      if (!general_message->has_value()) {
         all_reacted = false;
       }
     }
@@ -536,8 +521,8 @@ void SubscriberBase::controlCommandOutputCallback(
       if (!published_time_vec.empty()) {
         for (const auto & published_time : published_time_vec) {
           if (published_time->header.stamp == brake_cmd.stamp) {
-            cmd_buffer.second = brake_cmd;
-            cmd_buffer.second->stamp = published_time->published_stamp;
+            cmd_buffer.second->header.stamp = brake_cmd.stamp;
+            cmd_buffer.second->published_stamp = published_time->published_stamp;
             RCLCPP_INFO(node_->get_logger(), "%s reacted with published time", node_name.c_str());
             return;
           }
@@ -551,7 +536,8 @@ void SubscriberBase::controlCommandOutputCallback(
           node_name.c_str());
       }
     } else {
-      cmd_buffer.second = brake_cmd;
+      cmd_buffer.second->header.stamp = brake_cmd.stamp;
+      cmd_buffer.second->published_stamp = brake_cmd.stamp;
       RCLCPP_INFO(node_->get_logger(), "%s reacted without published time", node_name.c_str());
     }
   }
@@ -563,16 +549,14 @@ void SubscriberBase::trajectoryOutputCallback(
   mutex_.lock();
   auto variant = message_buffers_[node_name];
   const auto current_odometry_ptr = odometry_;
-  if (!std::holds_alternative<TrajectoryBuffer>(variant)) {
-    TrajectoryBuffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
   mutex_.unlock();
 
-  if (
-    !current_odometry_ptr || !spawn_object_cmd_ ||
-    std::get<TrajectoryBuffer>(variant).has_value()) {
+  if (!current_odometry_ptr || !spawn_object_cmd_ || std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
@@ -586,8 +570,11 @@ void SubscriberBase::trajectoryOutputCallback(
     msg_ptr->points, nearest_seg_idx, nearest_objects_seg_idx);
 
   if (zero_vel_idx) {
-    std::get<TrajectoryBuffer>(variant) = *msg_ptr;
     RCLCPP_INFO(node_->get_logger(), "%s reacted without published time", node_name.c_str());
+    // set header time
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer->header.stamp = msg_ptr->header.stamp;
+    buffer->published_stamp = msg_ptr->header.stamp;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -601,16 +588,14 @@ void SubscriberBase::trajectoryOutputCallback(
   mutex_.lock();
   auto variant = message_buffers_[node_name];
   const auto current_odometry_ptr = odometry_;
-  if (!std::holds_alternative<TrajectoryBuffer>(variant)) {
-    TrajectoryBuffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
   mutex_.unlock();
 
-  if (
-    !current_odometry_ptr || !spawn_object_cmd_ ||
-    std::get<TrajectoryBuffer>(variant).has_value()) {
+  if (!current_odometry_ptr || !spawn_object_cmd_ || std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
@@ -628,11 +613,10 @@ void SubscriberBase::trajectoryOutputCallback(
     motion_utils::searchZeroVelocityIndex(msg_ptr->points, nearest_seg_idx, target_idx);
 
   if (zero_vel_idx) {
-    std::get<TrajectoryBuffer>(variant) = *msg_ptr;
-
-    // set published time
-    std::get<TrajectoryBuffer>(variant)->header.stamp = published_time_ptr->published_stamp;
     RCLCPP_INFO(node_->get_logger(), "%s reacted with published time", node_name.c_str());
+    // set published time
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer = *published_time_ptr;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -644,14 +628,14 @@ void SubscriberBase::pointcloud2OutputCallback(
 {
   mutex_.lock();
   auto variant = message_buffers_[node_name];
-  if (!std::holds_alternative<PointCloud2Buffer>(variant)) {
-    PointCloud2Buffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
   mutex_.unlock();
 
-  if (!spawn_object_cmd_ || std::get<PointCloud2Buffer>(variant).has_value()) {
+  if (!spawn_object_cmd_ || std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
@@ -677,8 +661,11 @@ void SubscriberBase::pointcloud2OutputCallback(
   pcl::fromROSMsg(transformed_points, pcl_pointcloud);
 
   if (searchPointcloudNearEntity(pcl_pointcloud)) {
-    std::get<PointCloud2Buffer>(variant) = *msg_ptr;
     RCLCPP_INFO(node_->get_logger(), "%s reacted without published time", node_name.c_str());
+    // set header time
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer->header.stamp = msg_ptr->header.stamp;
+    buffer->published_stamp = msg_ptr->header.stamp;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -690,14 +677,14 @@ void SubscriberBase::pointcloud2OutputCallback(
 {
   mutex_.lock();
   auto variant = message_buffers_[node_name];
-  if (!std::holds_alternative<PointCloud2Buffer>(variant)) {
-    PointCloud2Buffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
   mutex_.unlock();
 
-  if (!spawn_object_cmd_ || std::get<PointCloud2Buffer>(variant).has_value()) {
+  if (!spawn_object_cmd_ || std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
@@ -723,10 +710,10 @@ void SubscriberBase::pointcloud2OutputCallback(
   pcl::fromROSMsg(transformed_points, pcl_pointcloud);
 
   if (searchPointcloudNearEntity(pcl_pointcloud)) {
-    std::get<PointCloud2Buffer>(variant) = *msg_ptr;
-    // set published time
-    std::get<PointCloud2Buffer>(variant)->header.stamp = published_time_ptr->published_stamp;
     RCLCPP_INFO(node_->get_logger(), "%s reacted with published time", node_name.c_str());
+    // set published time
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer = *published_time_ptr;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -737,8 +724,8 @@ void SubscriberBase::predictedObjectsOutputCallback(
 {
   mutex_.lock();
   auto variant = message_buffers_[node_name];
-  if (!std::holds_alternative<PredictedObjectsBuffer>(variant)) {
-    PredictedObjectsBuffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
@@ -746,14 +733,16 @@ void SubscriberBase::predictedObjectsOutputCallback(
 
   if (
     !spawn_object_cmd_ || msg_ptr->objects.empty() ||
-    std::get<PredictedObjectsBuffer>(variant).has_value()) {
+    std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
   if (searchPredictedObjectsNearEntity(*msg_ptr)) {
-    std::get<PredictedObjectsBuffer>(variant) = *msg_ptr;
     RCLCPP_INFO(node_->get_logger(), "%s reacted without published time", node_name.c_str());
-
+    // set header time
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer->header.stamp = msg_ptr->header.stamp;
+    buffer->published_stamp = msg_ptr->header.stamp;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -766,8 +755,8 @@ void SubscriberBase::predictedObjectsOutputCallback(
 {
   mutex_.lock();
   auto variant = message_buffers_[node_name];
-  if (!std::holds_alternative<PredictedObjectsBuffer>(variant)) {
-    PredictedObjectsBuffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
@@ -775,16 +764,15 @@ void SubscriberBase::predictedObjectsOutputCallback(
 
   if (
     !spawn_object_cmd_ || msg_ptr->objects.empty() ||
-    std::get<PredictedObjectsBuffer>(variant).has_value()) {
+    std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
   if (searchPredictedObjectsNearEntity(*msg_ptr)) {
-    std::get<PredictedObjectsBuffer>(variant) = *msg_ptr;
     RCLCPP_INFO(node_->get_logger(), "%s reacted with published time", node_name.c_str());
-
     // set published time
-    std::get<PredictedObjectsBuffer>(variant)->header.stamp = published_time_ptr->published_stamp;
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer = *published_time_ptr;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -796,15 +784,15 @@ void SubscriberBase::detectedObjectsOutputCallback(
 {
   mutex_.lock();
   auto variant = message_buffers_[node_name];
-  if (!std::holds_alternative<DetectedObjectsBuffer>(variant)) {
-    DetectedObjectsBuffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
   mutex_.unlock();
   if (
     !spawn_object_cmd_ || msg_ptr->objects.empty() ||
-    std::get<DetectedObjectsBuffer>(variant).has_value()) {
+    std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
@@ -829,8 +817,11 @@ void SubscriberBase::detectedObjectsOutputCallback(
     obj.kinematics.pose_with_covariance.pose = output_stamped.pose;
   }
   if (searchDetectedObjectsNearEntity(output_objs)) {
-    std::get<DetectedObjectsBuffer>(variant) = *msg_ptr;
     RCLCPP_INFO(node_->get_logger(), "%s reacted without published time", node_name.c_str());
+    // set header time
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer->header.stamp = msg_ptr->header.stamp;
+    buffer->published_stamp = msg_ptr->header.stamp;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -843,15 +834,15 @@ void SubscriberBase::detectedObjectsOutputCallback(
 {
   mutex_.lock();
   auto variant = message_buffers_[node_name];
-  if (!std::holds_alternative<DetectedObjectsBuffer>(variant)) {
-    DetectedObjectsBuffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
   mutex_.unlock();
   if (
     !spawn_object_cmd_ || msg_ptr->objects.empty() ||
-    std::get<DetectedObjectsBuffer>(variant).has_value()) {
+    std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
@@ -876,11 +867,10 @@ void SubscriberBase::detectedObjectsOutputCallback(
     obj.kinematics.pose_with_covariance.pose = output_stamped.pose;
   }
   if (searchDetectedObjectsNearEntity(output_objs)) {
-    std::get<DetectedObjectsBuffer>(variant) = *msg_ptr;
     RCLCPP_INFO(node_->get_logger(), "%s reacted with published time", node_name.c_str());
-
     // set published time
-    std::get<DetectedObjectsBuffer>(variant)->header.stamp = published_time_ptr->published_stamp;
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer = *published_time_ptr;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -892,21 +882,24 @@ void SubscriberBase::trackedObjectsOutputCallback(
 {
   mutex_.lock();
   auto variant = message_buffers_[node_name];
-  if (!std::holds_alternative<TrackedObjectsBuffer>(variant)) {
-    TrackedObjectsBuffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
   mutex_.unlock();
   if (
     !spawn_object_cmd_ || msg_ptr->objects.empty() ||
-    std::get<TrackedObjectsBuffer>(variant).has_value()) {
+    std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
   if (searchTrackedObjectsNearEntity(*msg_ptr)) {
-    std::get<TrackedObjectsBuffer>(variant) = *msg_ptr;
-    RCLCPP_INFO(node_->get_logger(), "Reacted %s", node_name.c_str());
+    RCLCPP_INFO(node_->get_logger(), "%s reacted without published time", node_name.c_str());
+    // set header time
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer->header.stamp = msg_ptr->header.stamp;
+    buffer->published_stamp = msg_ptr->header.stamp;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();
@@ -919,23 +912,23 @@ void SubscriberBase::trackedObjectsOutputCallback(
 {
   mutex_.lock();
   auto variant = message_buffers_[node_name];
-  if (!std::holds_alternative<TrackedObjectsBuffer>(variant)) {
-    TrackedObjectsBuffer buffer(std::nullopt);
+  if (!std::holds_alternative<MessageBuffer>(variant)) {
+    MessageBuffer buffer(std::nullopt);
     variant = buffer;
     message_buffers_[node_name] = variant;
   }
   mutex_.unlock();
   if (
     !spawn_object_cmd_ || msg_ptr->objects.empty() ||
-    std::get<TrackedObjectsBuffer>(variant).has_value()) {
+    std::get<MessageBuffer>(variant).has_value()) {
     return;
   }
 
   if (searchTrackedObjectsNearEntity(*msg_ptr)) {
-    std::get<TrackedObjectsBuffer>(variant) = *msg_ptr;
     RCLCPP_INFO(node_->get_logger(), "%s reacted with published time", node_name.c_str());
     // set published time
-    std::get<TrackedObjectsBuffer>(variant)->header.stamp = published_time_ptr->published_stamp;
+    auto & buffer = std::get<MessageBuffer>(variant);
+    buffer = *published_time_ptr;
     mutex_.lock();
     message_buffers_[node_name] = variant;
     mutex_.unlock();

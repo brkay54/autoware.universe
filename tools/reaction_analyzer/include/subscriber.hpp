@@ -63,19 +63,13 @@ using geometry_msgs::msg::Pose;
 using nav_msgs::msg::Odometry;
 using sensor_msgs::msg::PointCloud2;
 
-// Buffers to be used to store subscribed messages
-using ControlCommandBuffer =
-  std::pair<std::vector<AckermannControlCommand>, std::optional<AckermannControlCommand>>;
-using TrajectoryBuffer = std::optional<Trajectory>;
-using PointCloud2Buffer = std::optional<PointCloud2>;
-using PredictedObjectsBuffer = std::optional<PredictedObjects>;
-using DetectedObjectsBuffer = std::optional<DetectedObjects>;
-using TrackedObjectsBuffer = std::optional<TrackedObjects>;
+// Buffers to be used to store subscribed messages' data, pipeline Header, and PublishedTime
+using MessageBuffer = std::optional<PublishedTime>;
+// We need to store the past AckermannControlCommands to analyze the first brake
+using ControlCommandBuffer = std::pair<std::vector<AckermannControlCommand>, MessageBuffer>;
 
 // Variant to store different types of buffers
-using BufferVariant = std::variant<
-  ControlCommandBuffer, TrajectoryBuffer, PointCloud2Buffer, PredictedObjectsBuffer,
-  DetectedObjectsBuffer, TrackedObjectsBuffer>;
+using MessageBufferVariant = std::variant<ControlCommandBuffer, MessageBuffer>;
 
 template <typename MessageType>
 struct SubscriberVariables
@@ -162,7 +156,7 @@ public:
 
   ~SubscriberBase() = default;
 
-  std::optional<std::unordered_map<std::string, BufferVariant>> getMessageBuffersMap();
+  std::optional<std::unordered_map<std::string, MessageBufferVariant>> getMessageBuffersMap();
   void reset();
 
 private:
@@ -179,7 +173,7 @@ private:
 
   // Variants
   std::unordered_map<std::string, SubscriberVariablesVariant> subscriber_variables_map_;
-  std::unordered_map<std::string, BufferVariant> message_buffers_;
+  std::unordered_map<std::string, MessageBufferVariant> message_buffers_;
 
   // tf
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;

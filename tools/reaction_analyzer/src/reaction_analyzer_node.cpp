@@ -273,51 +273,37 @@ void ReactionAnalyzerNode::spawnObstacle(const geometry_msgs::msg::Point & ego_p
 }
 
 void ReactionAnalyzerNode::calculateResults(
-  const std::unordered_map<std::string, subscriber::BufferVariant> & message_buffers,
+  const std::unordered_map<std::string, subscriber::MessageBufferVariant> & message_buffers,
   const rclcpp::Time & spawn_cmd_time)
 {
-  auto createDurationMs = [](const rclcpp::Time & start_time, const rclcpp::Time & end_time) {
-    return static_cast<double>((end_time - start_time).nanoseconds()) / 1e6;
-  };
-  std::vector<std::pair<std::string, rclcpp::Time>> reaction_times;
-  for (const auto & [key, variant] : message_buffers) {
-    rclcpp::Time reaction_time;
+  // Map the reaction times w.r.t its header time to categorize it
+  PipelineMap pipeline_map;
 
+  {
+    // set the spawn_cmd_time as the first reaction pair
+    ReactionPair reaction_pair;
+    reaction_pair.first = "spawn_cmd_time";
+    reaction_pair.second.header.stamp = spawn_cmd_time;
+    reaction_pair.second.published_stamp = spawn_cmd_time;
+    pipeline_map[reaction_pair.second.header.stamp] = reaction_pair;
+  }
+
+  for (const auto & [key, variant] : message_buffers) {
+    ReactionPair reaction_pair;
     if (auto * control_message = std::get_if<subscriber::ControlCommandBuffer>(&variant)) {
       if (control_message->second) {
-        reaction_time = control_message->second->stamp;
+        reaction_pair.first = key;
+        reaction_pair.second = control_message->second.value();
       }
-    } else if (auto * planning_message = std::get_if<subscriber::TrajectoryBuffer>(&variant)) {
-      if (planning_message->has_value()) {
-        reaction_time = planning_message->value().header.stamp;
-      }
-    } else if (auto * pointcloud_message = std::get_if<subscriber::PointCloud2Buffer>(&variant)) {
-      if (pointcloud_message->has_value()) {
-        reaction_time = pointcloud_message->value().header.stamp;
-      }
-    } else if (
-      auto * predicted_objects_message =
-        std::get_if<subscriber::PredictedObjectsBuffer>(&variant)) {
-      if (predicted_objects_message->has_value()) {
-        reaction_time = predicted_objects_message->value().header.stamp;
-      }
-    } else if (
-      auto * detected_objects_message = std::get_if<subscriber::DetectedObjectsBuffer>(&variant)) {
-      if (detected_objects_message->has_value()) {
-        reaction_time = detected_objects_message->value().header.stamp;
-      }
-    } else if (
-      auto * tracked_objects_message = std::get_if<subscriber::TrackedObjectsBuffer>(&variant)) {
-      if (tracked_objects_message->has_value()) {
-        reaction_time = tracked_objects_message->value().header.stamp;
+    } else if (auto * general_message = std::get_if<subscriber::MessageBuffer>(&variant)) {
+      if (general_message->has_value()) {
+        reaction_pair.first = key;
+        reaction_pair.second = general_message->value();
       }
     }
-    const auto duration = createDurationMs(spawn_cmd_time, reaction_time);
-
-    RCLCPP_INFO(
-      this->get_logger(), "Spawn time to %s node reaction: %lf ms", key.c_str(), duration);
-    test_results_[key].emplace_back(duration);
+    pipeline_map[reaction_pair.second.header.stamp] = reaction_pair;
   }
+  pipeline_map_vector_.emplace_back(pipeline_map);
   test_iteration_count_++;
 }
 
@@ -588,8 +574,8 @@ void ReactionAnalyzerNode::reset()
 
 void ReactionAnalyzerNode::writeResultsToFile()
 {
-  // sort the results w.r.t the median value
-  const auto sorted_data_by_median = sortResultsByMedian(test_results_);
+//  // sort the results w.r.t the median value
+//  const auto sorted_data_by_median = sortResultsByMedian(test_results_);
 
   // create csv file
   auto now = std::chrono::system_clock::now();
@@ -617,12 +603,9 @@ void ReactionAnalyzerNode::writeResultsToFile()
     return;
   }
 
-  bool is_header_written = false;
+  size_t test_count = 0;
+  for (const auto & pipeline_map : pipeline_map_vector_) {
 
-  for (const auto & data : sorted_data_by_median) {
-    // Unpack the tuple
-    const auto & node = std::get<0>(data);
-    const auto & durations = std::get<1>(data);
 
     if (!is_header_written) {
       file << "Node,";
