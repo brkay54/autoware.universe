@@ -285,7 +285,7 @@ void ReactionAnalyzerNode::calculateResults(
     reaction_pair.first = "spawn_cmd_time";
     reaction_pair.second.header.stamp = spawn_cmd_time;
     reaction_pair.second.published_stamp = spawn_cmd_time;
-    pipeline_map[reaction_pair.second.header.stamp] = reaction_pair;
+    pipeline_map[reaction_pair.second.header.stamp].emplace_back(reaction_pair);
   }
 
   for (const auto & [key, variant] : message_buffers) {
@@ -301,7 +301,7 @@ void ReactionAnalyzerNode::calculateResults(
         reaction_pair.second = general_message->value();
       }
     }
-    pipeline_map[reaction_pair.second.header.stamp] = reaction_pair;
+    pipeline_map[reaction_pair.second.header.stamp].emplace_back(reaction_pair);
   }
   pipeline_map_vector_.emplace_back(pipeline_map);
   test_iteration_count_++;
