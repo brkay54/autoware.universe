@@ -62,6 +62,10 @@ using geometry_msgs::msg::Pose;
 using geometry_msgs::msg::PoseStamped;
 using nav_msgs::msg::Odometry;
 using sensor_msgs::msg::PointCloud2;
+using autoware_internal_msgs::msg::PublishedTime;
+
+using ReactionPair = std::pair<std::string, PublishedTime>;
+using PipelineMap = std::map<rclcpp::Time, std::vector<ReactionPair>>;
 
 // The running mode of the node
 enum class RunningMode {
@@ -145,7 +149,7 @@ private:
   tf2_ros::TransformListener tf_listener_{tf_buffer_};
 
   // Variables
-  std::unordered_map<std::string, std::vector<double>> test_results_;
+  std::vector<PipelineMap> pipeline_map_vector_;
   std::optional<rclcpp::Time> last_test_environment_init_request_time_;
   std::optional<rclcpp::Time> test_environment_init_time_;
   std::optional<rclcpp::Time> spawn_cmd_time_;
@@ -174,7 +178,7 @@ private:
   void spawnObstacle(const geometry_msgs::msg::Point & ego_pose);
 
   void calculateResults(
-    const std::unordered_map<std::string, subscriber::BufferVariant> & message_buffers,
+    const std::unordered_map<std::string, subscriber::MessageBufferVariant> & message_buffers,
     const rclcpp::Time & spawn_cmd_time);
 
   void onTimer();
