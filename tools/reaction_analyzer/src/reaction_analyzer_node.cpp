@@ -574,9 +574,6 @@ void ReactionAnalyzerNode::reset()
 
 void ReactionAnalyzerNode::writeResultsToFile()
 {
-//  // sort the results w.r.t the median value
-//  const auto sorted_data_by_median = sortResultsByMedian(test_results_);
-
   // create csv file
   auto now = std::chrono::system_clock::now();
   auto in_time_t = std::chrono::system_clock::to_time_t(now);
@@ -605,44 +602,48 @@ void ReactionAnalyzerNode::writeResultsToFile()
 
   size_t test_count = 0;
   for (const auto & pipeline_map : pipeline_map_vector_) {
+    test_count++;
+    // convert pipeline_map to vector of tuples
+    const auto sorted_results_vector = convertPipelineMap(pipeline_map);
+    file << "Test " << test_count << "\n";
+    for (size_t i = 1; i < sorted_results_vector.size(); ++i) {
+      const auto & [pipeline_header_time, reactions] = sorted_results_vector[i];
 
+      for (const auto & reaction : reactions) {
+        if (i == 1) {
 
-    if (!is_header_written) {
-      file << "Node,";
-      const size_t num_durations = durations.size();
-      for (size_t i = 0; i < num_durations; ++i) {
-        file << "Test - " << i + 1 << ",";
+        }
       }
       file << "Min,Max,Mean,Median,StdDev\n";
-      is_header_written = true;
+      break;
     }
 
-    // parse test results
-    file << node << ",";
-    for (double duration : durations) {
-      file << duration << ",";
-    }
-
-    // calculate stats
-    const double min = *std::min_element(durations.begin(), durations.end());
-    const double max = *std::max_element(durations.begin(), durations.end());
-
-    std::vector<double> sorted_data = durations;
-    std::sort(sorted_data.begin(), sorted_data.end());
-    const double median =
-      sorted_data.size() % 2 == 0
-        ? (sorted_data[sorted_data.size() / 2 - 1] + sorted_data[sorted_data.size() / 2]) / 2
-        : sorted_data[sorted_data.size() / 2];
-
-    const double mean =
-      std::accumulate(sorted_data.begin(), sorted_data.end(), 0.0) / sorted_data.size();
-    const double sq_sum = std::inner_product(
-      sorted_data.begin(), sorted_data.end(), sorted_data.begin(), 0.0, std::plus<>(),
-      [&](double a, double b) { return (a - mean) * (b - mean); });
-    double std_dev = std::sqrt(sq_sum / sorted_data.size());
-
-    // parse stats
-    file << min << "," << max << "," << mean << "," << median << "," << std_dev << "\n";
+//    // parse test results
+//    file << node << ",";
+//    for (double duration : durations) {
+//      file << duration << ",";
+//    }
+//
+//    // calculate stats
+//    const double min = *std::min_element(durations.begin(), durations.end());
+//    const double max = *std::max_element(durations.begin(), durations.end());
+//
+//    std::vector<double> sorted_data = durations;
+//    std::sort(sorted_data.begin(), sorted_data.end());
+//    const double median =
+//      sorted_data.size() % 2 == 0
+//        ? (sorted_data[sorted_data.size() / 2 - 1] + sorted_data[sorted_data.size() / 2]) / 2
+//        : sorted_data[sorted_data.size() / 2];
+//
+//    const double mean =
+//      std::accumulate(sorted_data.begin(), sorted_data.end(), 0.0) / sorted_data.size();
+//    const double sq_sum = std::inner_product(
+//      sorted_data.begin(), sorted_data.end(), sorted_data.begin(), 0.0, std::plus<>(),
+//      [&](double a, double b) { return (a - mean) * (b - mean); });
+//    double std_dev = std::sqrt(sq_sum / sorted_data.size());
+//
+//    // parse stats
+//    file << min << "," << max << "," << mean << "," << median << "," << std_dev << "\n";
   }
   file.close();
   RCLCPP_INFO(this->get_logger(), "Results written to: %s", ss.str().c_str());

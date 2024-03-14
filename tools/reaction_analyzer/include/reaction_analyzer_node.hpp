@@ -45,6 +45,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -58,11 +59,11 @@ using autoware_adapi_v1_msgs::msg::RouteState;
 using autoware_adapi_v1_msgs::srv::ChangeOperationMode;
 using autoware_auto_perception_msgs::msg::PredictedObject;
 using autoware_auto_perception_msgs::msg::PredictedObjects;
+using autoware_internal_msgs::msg::PublishedTime;
 using geometry_msgs::msg::Pose;
 using geometry_msgs::msg::PoseStamped;
 using nav_msgs::msg::Odometry;
 using sensor_msgs::msg::PointCloud2;
-using autoware_internal_msgs::msg::PublishedTime;
 
 using ReactionPair = std::pair<std::string, PublishedTime>;
 using PipelineMap = std::map<rclcpp::Time, std::vector<ReactionPair>>;
@@ -123,6 +124,48 @@ private:
   std::mutex mutex_;
   RunningMode node_running_mode_;
 
+  /**
+ * Calculates the time difference in milliseconds between two rclcpp::Time instances.
+ *
+ * @param start The start time.
+ * @param end The end time.
+ * @return The time difference in milliseconds as a double.
+   */
+  double calculateTimeDifferenceInMilliseconds(const rclcpp::Time& start, const rclcpp::Time& end) {
+    // Calculate the difference between the two times, which is a duration
+    const auto duration = end - start;
+
+    const auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration.to_chrono<std::chrono::nanoseconds>());
+
+    // Return the count of milliseconds as a double
+    return static_cast<double>(duration_ms.count());
+  }
+  // Convert function
+  std::vector<std::tuple<rclcpp::Time, std::vector<ReactionPair>>> convertPipelineMap(
+    const PipelineMap & pipelineMap)
+  {
+    std::vector<std::tuple<rclcpp::Time, std::vector<ReactionPair>>> sortedVector;
+
+    for (const auto & entry : pipelineMap) {
+      auto sortedReactions = entry.second;
+      // Sort the vector of ReactionPair based on the string part
+      std::sort(
+        sortedReactions.begin(), sortedReactions.end(),
+        [](const ReactionPair & a, const ReactionPair & b) {
+          return rclcpp::Time(a.second.published_stamp) < rclcpp::Time(b.second.published_stamp);
+        });
+
+      // Add to the vector as a tuple
+      sortedVector.push_back(std::make_tuple(entry.first, sortedReactions));
+    }
+
+    // Sort the vector of tuples by rclcpp::Time
+    std::sort(sortedVector.begin(), sortedVector.end(), [](const auto & a, const auto & b) {
+      return std::get<0>(a) < std::get<0>(b);
+    });
+
+    return sortedVector;
+  }
   // Parameters
   NodeParams node_params_;
 
