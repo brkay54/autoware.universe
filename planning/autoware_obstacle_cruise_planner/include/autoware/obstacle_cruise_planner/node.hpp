@@ -88,6 +88,8 @@ private:
   std::optional<StopObstacle> createStopObstacleForPointCloud(
     const std::vector<TrajectoryPoint> & traj_points, const Obstacle & obstacle,
     const double precise_lateral_dist) const;
+  bool isInsideStopObstacle(const uint8_t label) const;
+  bool isOutsideStopObstacle(const uint8_t label) const;
   bool isStopObstacle(const uint8_t label) const;
   bool isInsideCruiseObstacle(const uint8_t label) const;
   bool isOutsideCruiseObstacle(const uint8_t label) const;
@@ -145,7 +147,8 @@ private:
   double min_safe_distance_margin_on_curve_;
   bool suppress_sudden_obstacle_stop_;
 
-  std::vector<int> stop_obstacle_types_;
+  std::vector<int> inside_stop_obstacle_types_;
+  std::vector<int> outside_stop_obstacle_types_;
   std::vector<int> inside_cruise_obstacle_types_;
   std::vector<int> outside_cruise_obstacle_types_;
   std::vector<int> slow_down_obstacle_types_;
