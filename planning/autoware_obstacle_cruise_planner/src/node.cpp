@@ -91,18 +91,40 @@ double calcDistanceToFrontVehicle(
   return ego_to_obstacle_distance;
 }
 
-PredictedPath resampleHighestConfidencePredictedPath(
-  const std::vector<PredictedPath> & predicted_paths, const double time_interval,
-  const double time_horizon)
-{
-  // get highest confidence path
-  const auto reliable_path = std::max_element(
-    predicted_paths.begin(), predicted_paths.end(),
-    [](const PredictedPath & a, const PredictedPath & b) { return a.confidence < b.confidence; });
+#include <algorithm>
+#include <cstddef>
+#include <vector>
 
-  // resample
-  return object_recognition_utils::resamplePredictedPath(
-    *reliable_path, time_interval, time_horizon);
+std::vector<PredictedPath> resampleHighestConfidencePredictedPath(
+  const std::vector<PredictedPath> & predicted_paths, const double time_interval,
+  const double time_horizon, const size_t num_paths)
+{
+  std::vector<PredictedPath> sorted_paths = predicted_paths;
+
+  // Sort paths by descending confidence
+  std::sort(
+    sorted_paths.begin(), sorted_paths.end(),
+    [](const PredictedPath & a, const PredictedPath & b) { return a.confidence > b.confidence; });
+
+  std::vector<PredictedPath> selected_paths;
+  size_t path_count = 0;
+
+  // Select paths that meet the confidence thresholds
+  for (const auto & path : sorted_paths) {
+    if (path_count < num_paths) {
+      selected_paths.push_back(path);
+      ++path_count;
+    }
+  }
+
+  // Resample each selected path
+  std::vector<PredictedPath> resampled_paths;
+  for (const auto & path : selected_paths) {
+    resampled_paths.push_back(
+      object_recognition_utils::resamplePredictedPath(path, time_interval, time_horizon));
+  }
+
+  return resampled_paths;
 }
 
 double calcDiffAngleAgainstTrajectory(
@@ -1085,12 +1107,13 @@ ObstacleCruisePlannerNode::determineEgoBehaviorAgainstPredictedObjectObstacles(
     }
 
     // Filter obstacles for cruise, stop and slow down
-    const auto cruise_obstacle =
-      createCruiseObstacle(decimated_traj_points, decimated_traj_polys, obstacle, precise_lat_dist);
+    const auto cruise_obstacle = createCruiseObstacle(
+      odometry, decimated_traj_points, decimated_traj_polys, obstacle, precise_lat_dist);
     if (cruise_obstacle) {
       cruise_obstacles.push_back(*cruise_obstacle);
       continue;
     }
+
     const auto stop_obstacle = createStopObstacleForPredictedObject(
       odometry, decimated_traj_points, decimated_traj_polys, obstacle, precise_lat_dist);
     if (stop_obstacle) {
@@ -1234,8 +1257,9 @@ std::vector<TrajectoryPoint> ObstacleCruisePlannerNode::decimateTrajectoryPoints
 }
 
 std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createCruiseObstacle(
-  const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
-  const Obstacle & obstacle, const double precise_lat_dist)
+  const Odometry & odometry, const std::vector<TrajectoryPoint> & traj_points,
+  const std::vector<Polygon2d> & traj_polys, const Obstacle & obstacle,
+  const double precise_lat_dist)
 {
   const auto & object_id = obstacle.uuid.substr(0, 4);
   const auto & p = behavior_determination_param_;
@@ -1245,11 +1269,25 @@ std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createCruiseObstacle(
   if (!isCruiseObstacle(obstacle.classification.label) || !is_driving_forward_) {
     return std::nullopt;
   }
-  if (p.max_lat_margin_for_cruise < precise_lat_dist) {
+
+  if (obstacle.lon_velocity < 0.0) {
     RCLCPP_INFO_EXPRESSION(
       get_logger(), enable_debug_info_,
-      "[Cruise] Ignore obstacle (%s) since it's far from trajectory.", object_id.c_str());
+      "[Cruise] Ignore obstacle (%s) since it's driving opposite direction.", object_id.c_str());
     return std::nullopt;
+  }
+
+  if (p.max_lat_margin_for_cruise < precise_lat_dist) {
+    const auto time_to_traj = precise_lat_dist / std::max(1e-6, obstacle.lat_velocity);
+
+    if (time_to_traj < 0.0 || time_to_traj > 2.5) {
+      {
+        RCLCPP_INFO_EXPRESSION(
+          get_logger(), enable_debug_info_,
+          "[Cruise] Ignore obstacle (%s) since it's far from trajectory.", object_id.c_str());
+        return std::nullopt;
+      }
+    }
   }
   if (isObstacleCrossing(traj_points, obstacle)) {
     RCLCPP_INFO_EXPRESSION(
@@ -1261,12 +1299,13 @@ std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createCruiseObstacle(
 
   const auto collision_points = [&]() -> std::optional<std::vector<PointWithStamp>> {
     constexpr double epsilon = 1e-6;
-    if (precise_lat_dist < epsilon) {
+    if (precise_lat_dist < epsilon && obstacle.ego_to_obstacle_distance > 0.0) {
       // obstacle is inside the trajectory
       return createCollisionPointsForInsideCruiseObstacle(traj_points, traj_polys, obstacle);
     }
     // obstacle is outside the trajectory
-    return createCollisionPointsForOutsideCruiseObstacle(traj_points, traj_polys, obstacle);
+    return createCollisionPointsForOutsideCruiseObstacle(
+      odometry, traj_points, traj_polys, obstacle);
   }();
   if (!collision_points) {
     return std::nullopt;
@@ -1274,7 +1313,6 @@ std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createCruiseObstacle(
 
   return CruiseObstacle{obstacle.uuid,         obstacle.stamp,        obstacle.pose,
                         obstacle.lon_velocity, obstacle.lat_velocity, *collision_points};
-                        tangent_vel,   normal_vel,     *collision_points};
 }
 
 std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createYieldCruiseObstacle(
@@ -1452,13 +1490,13 @@ ObstacleCruisePlannerNode::createCollisionPointsForInsideCruiseObstacle(
   // Get highest confidence predicted path
   const auto resampled_predicted_path = resampleHighestConfidencePredictedPath(
     obstacle.predicted_paths, p.prediction_resampling_time_interval,
-    p.prediction_resampling_time_horizon);
+    p.prediction_resampling_time_horizon, 1);
 
   // calculate nearest collision point
   std::vector<size_t> collision_index;
   const auto collision_points = polygon_utils::getCollisionPoints(
-    traj_points, traj_polys, obstacle.stamp, resampled_predicted_path, obstacle.shape, now(),
-    is_driving_forward_, collision_index,
+    traj_points, traj_polys, obstacle.stamp, resampled_predicted_path.front(), obstacle.shape,
+    now(), is_driving_forward_, collision_index,
     calcObstacleMaxLength(obstacle.shape) + p.decimate_trajectory_step_length +
       std::hypot(
         vehicle_info_.vehicle_length_m,
@@ -1468,8 +1506,8 @@ ObstacleCruisePlannerNode::createCollisionPointsForInsideCruiseObstacle(
 
 std::optional<std::vector<PointWithStamp>>
 ObstacleCruisePlannerNode::createCollisionPointsForOutsideCruiseObstacle(
-  const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
-  const Obstacle & obstacle) const
+  const Odometry & odometry, const std::vector<TrajectoryPoint> & traj_points,
+  const std::vector<Polygon2d> & traj_polys, const Obstacle & obstacle) const
 {
   const auto & p = behavior_determination_param_;
   const auto & object_id = obstacle.uuid.substr(0, 4);
@@ -1479,6 +1517,14 @@ ObstacleCruisePlannerNode::createCollisionPointsForOutsideCruiseObstacle(
     RCLCPP_INFO_EXPRESSION(
       get_logger(), enable_debug_info_,
       "[Cruise] Ignore outside obstacle (%s) since its type is not designated.", object_id.c_str());
+    return std::nullopt;
+  }
+
+  // if ego is stopping, check only stop obstacles
+  if (odometry.twist.twist.linear.x < 0.1) {
+    RCLCPP_INFO_EXPRESSION(
+      get_logger(), enable_debug_info_,
+      "[Cruise] Ignore outside obstacle (%s) since the ego is stopping.", object_id.c_str());
     return std::nullopt;
   }
 
@@ -1495,18 +1541,31 @@ ObstacleCruisePlannerNode::createCollisionPointsForOutsideCruiseObstacle(
   // Get highest confidence predicted path
   const auto resampled_predicted_path = resampleHighestConfidencePredictedPath(
     obstacle.predicted_paths, p.prediction_resampling_time_interval,
-    p.prediction_resampling_time_horizon);
+    p.prediction_resampling_time_horizon, 3);
 
   // calculate collision condition for cruise
   std::vector<size_t> collision_index;
-  const auto collision_points = polygon_utils::getCollisionPoints(
-    traj_points, traj_polys, obstacle.stamp, resampled_predicted_path, obstacle.shape, now(),
-    is_driving_forward_, collision_index,
-    calcObstacleMaxLength(obstacle.shape) + p.decimate_trajectory_step_length +
-      std::hypot(
-        vehicle_info_.vehicle_length_m,
-        vehicle_info_.vehicle_width_m * 0.5 + p.max_lat_margin_for_cruise),
-    p.max_prediction_time_for_collision_check);
+  std::vector<PointWithStamp> collision_points;
+
+  const auto getCollisionPoints = [&]() -> std::vector<PointWithStamp> {
+    for (const auto & predicted_path : resampled_predicted_path) {
+      collision_points = polygon_utils::getCollisionPoints(
+        traj_points, traj_polys, obstacle.stamp, predicted_path, obstacle.shape, now(),
+        is_driving_forward_, collision_index,
+        calcObstacleMaxLength(obstacle.shape) + p.decimate_trajectory_step_length +
+          std::hypot(
+            vehicle_info_.vehicle_length_m,
+            vehicle_info_.vehicle_width_m * 0.5 + p.max_lat_margin_for_cruise),
+        p.max_prediction_time_for_collision_check);
+      if (!collision_points.empty()) {
+        return collision_points;
+      }
+    }
+    return collision_points;
+  };
+
+  getCollisionPoints();
+
   if (collision_points.empty()) {
     // Ignore vehicle obstacles outside the trajectory without collision
     RCLCPP_INFO_EXPRESSION(
@@ -1520,6 +1579,7 @@ ObstacleCruisePlannerNode::createCollisionPointsForOutsideCruiseObstacle(
   const double overlap_time =
     (rclcpp::Time(collision_points.back().stamp) - rclcpp::Time(collision_points.front().stamp))
       .seconds();
+
   if (overlap_time < p.ego_obstacle_overlap_time_threshold) {
     // Ignore vehicle obstacles outside the trajectory, whose predicted path
     // overlaps the ego trajectory in a certain time.
@@ -1610,8 +1670,7 @@ std::optional<StopObstacle> ObstacleCruisePlannerNode::createStopObstacleForPred
   // Get the highest confidence predicted path
   const auto resampled_predicted_path = resampleHighestConfidencePredictedPath(
     obstacle.predicted_paths, p.prediction_resampling_time_interval,
-    p.prediction_resampling_time_horizon);
-  const auto [tangent_vel, normal_vel] = projectObstacleVelocityToTrajectory(traj_points, obstacle);
+    p.prediction_resampling_time_horizon, 1);
 
   // Obstacle that is not inside of trajectory
   if (
@@ -1658,22 +1717,20 @@ std::optional<StopObstacle> ObstacleCruisePlannerNode::createStopObstacleForPred
                                   ? std::abs(vehicle_info_.max_longitudinal_offset_m)
                                   : std::abs(vehicle_info_.min_longitudinal_offset_m);
 
-  const double time_to_reach_collision_point =
-    calcTimeToReachCollisionPoint(odometry, collision_point->first, traj_points, abs_ego_offset);
+  const double time_to_reach_collision_point = calcTimeToReachCollisionPoint(
+    odometry, collision_point->first, traj_points, abs_ego_offset, 3.0);
 
   const bool is_transient_obstacle = [&]() {
     // get the predicted position of the obstacle when ego reaches the collision point
-    if (
-      resampled_predicted_path.path.empty() ||
-      min_behavior_stop_margin_ > collision_point->second) {
+    if (resampled_predicted_path.empty() || resampled_predicted_path.front().path.empty()) {
       return false;
     }
     const auto future_obj_pose = object_recognition_utils::calcInterpolatedPose(
-      resampled_predicted_path, time_to_reach_collision_point);
+      resampled_predicted_path.front(), time_to_reach_collision_point);
 
     Obstacle tmp_future_obs = obstacle;
     tmp_future_obs.pose =
-      future_obj_pose ? future_obj_pose.value() : resampled_predicted_path.path.back();
+      future_obj_pose ? future_obj_pose.value() : resampled_predicted_path.front().path.back();
     const auto future_collision_point = polygon_utils::getCollisionPoint(
       traj_points, traj_polys_with_lat_margin, tmp_future_obs, is_driving_forward_, vehicle_info_);
 
@@ -1940,13 +1997,21 @@ double ObstacleCruisePlannerNode::calcCollisionTimeMargin(
                                   ? std::abs(vehicle_info_.max_longitudinal_offset_m)
                                   : std::abs(vehicle_info_.min_longitudinal_offset_m);
 
-  const double time_to_reach_collision_point = calcTimeToReachCollisionPoint(
-    odometry, collision_points.front().point, traj_points, abs_ego_offset);
+  const bool is_ego_stopping = odometry.twist.twist.linear.x < 0.1;
+
+  const double time_to_reach_collision_point =
+    is_ego_stopping ? calcTimeToReachCollisionPoint(
+                        odometry, collision_points.front().point, traj_points, abs_ego_offset, 10.0)
+                    : calcTimeToReachCollisionPoint(
+                        odometry, collision_points.front().point, traj_points, abs_ego_offset, 0.0);
 
   const double time_to_start_cross =
     (rclcpp::Time(collision_points.front().stamp) - now()).seconds();
   const double time_to_end_cross = (rclcpp::Time(collision_points.back().stamp) - now()).seconds();
-
+  std::cout << "is_ego_stopping: " << is_ego_stopping
+            << ", time_to_reach_collision_point: " << time_to_reach_collision_point
+            << ", time_to_start_cross: " << time_to_start_cross
+            << ", time_to_end_cross: " << time_to_end_cross << std::endl;
   if (time_to_reach_collision_point < time_to_start_cross) {  // Ego goes first.
     return time_to_start_cross - time_to_reach_collision_point;
   }
@@ -2134,13 +2199,16 @@ void ObstacleCruisePlannerNode::publishCalculationTime(const double calculation_
 
 double ObstacleCruisePlannerNode::calcTimeToReachCollisionPoint(
   const Odometry & odometry, const geometry_msgs::msg::Point & collision_point,
-  const std::vector<TrajectoryPoint> & traj_points, const double abs_ego_offset) const
+  const std::vector<TrajectoryPoint> & traj_points, const double abs_ego_offset,
+  const double min_transient_obj_distance) const
 {
   const double dist_from_ego_to_obstacle =
     std::abs(autoware::motion_utils::calcSignedArcLength(
       traj_points, odometry.pose.pose.position, collision_point)) -
     abs_ego_offset;
-  return dist_from_ego_to_obstacle / std::max(1e-6, std::abs(odometry.twist.twist.linear.x));
+  return dist_from_ego_to_obstacle > min_transient_obj_distance
+           ? dist_from_ego_to_obstacle / std::max(1e-6, std::abs(odometry.twist.twist.linear.x))
+           : 0.0;
 }
 }  // namespace autoware::motion_planning
 

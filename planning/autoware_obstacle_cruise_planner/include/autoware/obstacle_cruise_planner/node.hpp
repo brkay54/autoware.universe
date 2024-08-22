@@ -100,14 +100,15 @@ private:
   std::optional<std::vector<CruiseObstacle>> findYieldCruiseObstacles(
     const std::vector<Obstacle> & obstacles, const std::vector<TrajectoryPoint> & traj_points);
   std::optional<CruiseObstacle> createCruiseObstacle(
-    const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
-    const Obstacle & obstacle, const double precise_lat_dist);
+    const Odometry & odometry, const std::vector<TrajectoryPoint> & traj_points,
+    const std::vector<Polygon2d> & traj_polys, const Obstacle & obstacle,
+    const double precise_lat_dist);
   std::optional<std::vector<PointWithStamp>> createCollisionPointsForInsideCruiseObstacle(
-    const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
-    const Obstacle & obstacle) const;
+    const std::vector<TrajectoryPoint> & traj_points,
+    const std::vector<Polygon2d> & traj_polys, const Obstacle & obstacle) const;
   std::optional<std::vector<PointWithStamp>> createCollisionPointsForOutsideCruiseObstacle(
-    const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
-    const Obstacle & obstacle) const;
+    const Odometry & odometry, const std::vector<TrajectoryPoint> & traj_points,
+    const std::vector<Polygon2d> & traj_polys, const Obstacle & obstacle) const;
   bool isObstacleCrossing(
     const std::vector<TrajectoryPoint> & traj_points, const Obstacle & obstacle) const;
   double calcCollisionTimeMargin(
@@ -136,7 +137,8 @@ private:
     const size_t first_collision_idx) const;
   double calcTimeToReachCollisionPoint(
     const Odometry & odometry, const geometry_msgs::msg::Point & collision_point,
-    const std::vector<TrajectoryPoint> & traj_points, const double abs_ego_offset) const;
+    const std::vector<TrajectoryPoint> & traj_points, const double abs_ego_offset,
+    const double abs_min_velocity = 1e-6) const;
   bool enable_debug_info_;
   bool enable_calculation_time_info_;
   bool use_pointcloud_for_stop_;
