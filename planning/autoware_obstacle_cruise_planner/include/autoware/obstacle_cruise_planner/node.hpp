@@ -100,7 +100,7 @@ private:
   std::optional<std::vector<CruiseObstacle>> findYieldCruiseObstacles(
     const std::vector<Obstacle> & obstacles, const std::vector<TrajectoryPoint> & traj_points);
   std::optional<CruiseObstacle> createCruiseObstacle(
-    const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
+    const Odometry & odometry, const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
     const Obstacle & obstacle, const double precise_lat_dist);
   std::optional<std::vector<PointWithStamp>> createCollisionPointsForInsideCruiseObstacle(
     const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
@@ -223,6 +223,7 @@ private:
     double pointcloud_cluster_tolerance;
     int pointcloud_min_cluster_size;
     int pointcloud_max_cluster_size;
+    double time_margin_for_behind_obstacle;
     // hysteresis for stop and cruise
     double obstacle_velocity_threshold_from_cruise_to_stop;
     double obstacle_velocity_threshold_from_stop_to_cruise;

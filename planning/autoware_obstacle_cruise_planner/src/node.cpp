@@ -61,14 +61,33 @@ std::optional<T> getObstacleFromUuid(
   return *itr;
 }
 
-std::optional<double> calcDistanceToFrontVehicle(
+double calcDistanceToFrontVehicle(
   const std::vector<TrajectoryPoint> & traj_points, const size_t ego_idx,
   const geometry_msgs::msg::Point & obstacle_pos)
 {
   const size_t obstacle_idx = autoware::motion_utils::findNearestIndex(traj_points, obstacle_pos);
+
   const auto ego_to_obstacle_distance =
     autoware::motion_utils::calcSignedArcLength(traj_points, ego_idx, obstacle_idx);
-  if (ego_to_obstacle_distance < 0.0) return std::nullopt;
+
+  if (obstacle_idx == 0) {
+    auto long_projected_distance_to_trajectory_point = [&]() -> double {
+      const auto target_point = obstacle_pos;
+      const auto traj_point = traj_points.at(obstacle_idx);
+
+      const auto tp_yaw = tf2::getYaw(traj_point.pose.orientation);
+      const Eigen::Vector2d tp_vec_norm(cos(tp_yaw), sin(tp_yaw));
+      const Eigen::Vector2d relative_to_tp_vec(
+        target_point.x - traj_point.pose.position.x, target_point.y - traj_point.pose.position.y);
+
+      // Calculate the projection of relative_to_tp_vec onto the direction vector tp_vec_norm
+      const double projected_distance = relative_to_tp_vec.dot(tp_vec_norm);
+      return projected_distance;
+    };
+    const double total_dist =
+      long_projected_distance_to_trajectory_point() + ego_to_obstacle_distance;
+    return total_dist;
+  }
   return ego_to_obstacle_distance;
 }
 
@@ -360,6 +379,8 @@ ObstacleCruisePlannerNode::BehaviorDeterminationParam::BehaviorDeterminationPara
     "behavior_determination.cruise.outside_obstacle.num_of_predicted_paths");
   num_of_predicted_paths_for_outside_stop_obstacle = node.declare_parameter<int>(
     "behavior_determination.stop.outside_obstacle.num_of_predicted_paths");
+  time_margin_for_behind_obstacle =
+    node.declare_parameter<double>("behavior_determination.time_margin_for_behind_obstacle");
 }
 
 void ObstacleCruisePlannerNode::BehaviorDeterminationParam::onParam(
@@ -464,6 +485,9 @@ void ObstacleCruisePlannerNode::BehaviorDeterminationParam::onParam(
   autoware::universe_utils::updateParam<int>(
     parameters, "behavior_determination.stop.outside_obstacle.num_of_predicted_paths",
     num_of_predicted_paths_for_outside_stop_obstacle);
+  autoware::universe_utils::updateParam<double>(
+    parameters, "behavior_determination.time_margin_for_behind_obstacle",
+    time_margin_for_behind_obstacle);
 }
 
 ObstacleCruisePlannerNode::ObstacleCruisePlannerNode(const rclcpp::NodeOptions & node_options)
@@ -833,11 +857,26 @@ std::vector<Obstacle> ObstacleCruisePlannerNode::convertToObstacles(
     // 2. Check if the obstacle is in front of the ego.
     const auto ego_to_obstacle_distance =
       calcDistanceToFrontVehicle(traj_points, ego_idx, current_obstacle_pose.pose.position);
-    if (!ego_to_obstacle_distance) {
-      RCLCPP_INFO_EXPRESSION(
-        get_logger(), enable_debug_info_, "Ignore obstacle (%s) since it is not front obstacle.",
-        object_id.c_str());
-      continue;
+    if (ego_to_obstacle_distance < 0.0) {
+      // check relative tangent velocity
+      const auto relative_tangent_velocity = projected_vel.first - odometry.twist.twist.linear.x;
+      if (relative_tangent_velocity < 0.0) {
+        RCLCPP_INFO_EXPRESSION(
+          get_logger(), enable_debug_info_,
+          "Ignore obstacle (%s) since it is behind the ego and its relative velocity is negative.",
+          object_id.c_str());
+        continue;
+      }
+      // check time to overtake
+      const auto time_to_overtake =
+        -ego_to_obstacle_distance / std::max(epsilon, relative_tangent_velocity);
+      if (time_to_overtake > p.time_margin_for_behind_obstacle) {
+        RCLCPP_INFO_EXPRESSION(
+          get_logger(), enable_debug_info_,
+          "Ignore obstacle (%s) since it is behind the ego and too far to overtake.",
+          object_id.c_str());
+        continue;
+      }
     }
 
     // 3. Check if rough lateral distance and time to reach trajectory are smaller than the
@@ -870,7 +909,7 @@ std::vector<Obstacle> ObstacleCruisePlannerNode::convertToObstacles(
     }
 
     const auto target_obstacle = Obstacle(
-      obj_stamp, predicted_object, current_obstacle_pose.pose, *ego_to_obstacle_distance,
+      obj_stamp, predicted_object, current_obstacle_pose.pose, ego_to_obstacle_distance,
       lat_dist_from_obstacle_to_traj, projected_vel.first, projected_vel.second);
     target_obstacles.push_back(target_obstacle);
   }
@@ -957,9 +996,9 @@ std::vector<Obstacle> ObstacleCruisePlannerNode::convertToObstacles(
         if (min_lat_dist_to_traj_poly < max_lat_margin) {
           const auto current_ego_to_obstacle_distance =
             calcDistanceToFrontVehicle(traj_points, ego_idx, obstacle_point);
-          if (current_ego_to_obstacle_distance) {
+          if (current_ego_to_obstacle_distance >= 0.0) {
             ego_to_obstacle_distance =
-              std::min(ego_to_obstacle_distance, *current_ego_to_obstacle_distance);
+              std::min(ego_to_obstacle_distance, current_ego_to_obstacle_distance);
           } else {
             continue;
           }
@@ -968,18 +1007,18 @@ std::vector<Obstacle> ObstacleCruisePlannerNode::convertToObstacles(
             std::min(lat_dist_from_obstacle_to_traj, current_lat_dist_from_obstacle_to_traj);
 
           if (min_lat_dist_to_traj_poly < p.max_lat_margin_for_stop_against_unknown) {
-            if (*current_ego_to_obstacle_distance < ego_to_stop_collision_distance) {
+            if (current_ego_to_obstacle_distance < ego_to_stop_collision_distance) {
               stop_collision_point = obstacle_point;
-              ego_to_stop_collision_distance = *current_ego_to_obstacle_distance;
+              ego_to_stop_collision_distance = current_ego_to_obstacle_distance;
             }
           } else if (min_lat_dist_to_traj_poly < p.max_lat_margin_for_slow_down) {
-            if (*current_ego_to_obstacle_distance < ego_to_slow_down_front_collision_distance) {
+            if (current_ego_to_obstacle_distance < ego_to_slow_down_front_collision_distance) {
               slow_down_front_collision_point = obstacle_point;
-              ego_to_slow_down_front_collision_distance = *current_ego_to_obstacle_distance;
+              ego_to_slow_down_front_collision_distance = current_ego_to_obstacle_distance;
             } else if (
-              *current_ego_to_obstacle_distance > ego_to_slow_down_back_collision_distance) {
+              current_ego_to_obstacle_distance > ego_to_slow_down_back_collision_distance) {
               slow_down_back_collision_point = obstacle_point;
-              ego_to_slow_down_back_collision_distance = *current_ego_to_obstacle_distance;
+              ego_to_slow_down_back_collision_distance = current_ego_to_obstacle_distance;
             }
           }
         }
@@ -1085,8 +1124,8 @@ ObstacleCruisePlannerNode::determineEgoBehaviorAgainstPredictedObjectObstacles(
     }
 
     // Filter obstacles for cruise, stop and slow down
-    const auto cruise_obstacle =
-      createCruiseObstacle(decimated_traj_points, decimated_traj_polys, obstacle, precise_lat_dist);
+    const auto cruise_obstacle = createCruiseObstacle(
+      odometry, decimated_traj_points, decimated_traj_polys, obstacle, precise_lat_dist);
     if (cruise_obstacle) {
       cruise_obstacles.push_back(*cruise_obstacle);
       continue;
@@ -1234,8 +1273,9 @@ std::vector<TrajectoryPoint> ObstacleCruisePlannerNode::decimateTrajectoryPoints
 }
 
 std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createCruiseObstacle(
-  const std::vector<TrajectoryPoint> & traj_points, const std::vector<Polygon2d> & traj_polys,
-  const Obstacle & obstacle, const double precise_lat_dist)
+  const Odometry & odometry, const std::vector<TrajectoryPoint> & traj_points,
+  const std::vector<Polygon2d> & traj_polys, const Obstacle & obstacle,
+  const double precise_lat_dist)
 {
   const auto & object_id = obstacle.uuid.substr(0, 4);
   const auto & p = behavior_determination_param_;
@@ -1255,8 +1295,6 @@ std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createCruiseObstacle(
 
   if (p.max_lat_margin_for_cruise < precise_lat_dist) {
     const auto time_to_traj = precise_lat_dist / std::max(1e-6, obstacle.normal_velocity);
-    std::cout << "precise_lat_dist: " << precise_lat_dist << " time_to_traj: " << time_to_traj
-              << " normal_velocity: " << obstacle.normal_velocity << std::endl;
     if (time_to_traj > p.max_lat_time_margin_for_cruise) {
       RCLCPP_INFO_EXPRESSION(
         get_logger(), enable_debug_info_,
@@ -1275,12 +1313,16 @@ std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createCruiseObstacle(
 
   const auto collision_points = [&]() -> std::optional<std::vector<PointWithStamp>> {
     constexpr double epsilon = 1e-6;
-    if (precise_lat_dist < epsilon) {
+    if (precise_lat_dist < epsilon && obstacle.longitudinal_ego_to_obstacle_distance >= 0.0) {
       // obstacle is inside the trajectory
       return createCollisionPointsForInsideCruiseObstacle(traj_points, traj_polys, obstacle);
     }
+    const auto is_stopping = odometry.twist.twist.linear.x < 0.01;
     // obstacle is outside the trajectory
-    return createCollisionPointsForOutsideCruiseObstacle(traj_points, traj_polys, obstacle);
+    // if ego is stopping, don't plan cruise for outside obstacles, plan stop
+    return is_stopping
+             ? std::nullopt
+             : createCollisionPointsForOutsideCruiseObstacle(traj_points, traj_polys, obstacle);
   }();
   if (!collision_points) {
     return std::nullopt;
@@ -1366,6 +1408,8 @@ std::optional<std::vector<CruiseObstacle>> ObstacleCruisePlannerNode::findYieldC
   std::for_each(
     obstacles.begin(), obstacles.end(),
     [&stopped_obstacles, &moving_obstacles, &p](const auto & o) {
+      const auto is_front = o.longitudinal_ego_to_obstacle_distance >= 0.0;
+      if (!is_front) return;
       const bool is_moving =
         std::hypot(o.twist.linear.x, o.twist.linear.y) > p.stopped_obstacle_velocity_threshold;
       if (is_moving) {
@@ -1386,20 +1430,21 @@ std::optional<std::vector<CruiseObstacle>> ObstacleCruisePlannerNode::findYieldC
 
   std::sort(
     stopped_obstacles.begin(), stopped_obstacles.end(), [](const auto & o1, const auto & o2) {
-      return o1.ego_to_obstacle_distance < o2.ego_to_obstacle_distance;
+      return o1.longitudinal_ego_to_obstacle_distance < o2.longitudinal_ego_to_obstacle_distance;
     });
 
   std::sort(moving_obstacles.begin(), moving_obstacles.end(), [](const auto & o1, const auto & o2) {
-    return o1.ego_to_obstacle_distance < o2.ego_to_obstacle_distance;
+    return o1.longitudinal_ego_to_obstacle_distance < o2.longitudinal_ego_to_obstacle_distance;
   });
 
   std::vector<CruiseObstacle> yield_obstacles;
   for (const auto & moving_obstacle : moving_obstacles) {
     for (const auto & stopped_obstacle : stopped_obstacles) {
       const bool is_moving_obs_behind_of_stopped_obs =
-        moving_obstacle.ego_to_obstacle_distance < stopped_obstacle.ego_to_obstacle_distance;
+        moving_obstacle.longitudinal_ego_to_obstacle_distance <
+        stopped_obstacle.longitudinal_ego_to_obstacle_distance;
       const bool is_moving_obs_ahead_of_ego_front =
-        moving_obstacle.ego_to_obstacle_distance > vehicle_info_.vehicle_length_m;
+        moving_obstacle.longitudinal_ego_to_obstacle_distance > vehicle_info_.vehicle_length_m;
 
       if (!is_moving_obs_ahead_of_ego_front || !is_moving_obs_behind_of_stopped_obs) continue;
 
@@ -1408,7 +1453,8 @@ std::optional<std::vector<CruiseObstacle>> ObstacleCruisePlannerNode::findYieldC
         stopped_obstacle.lat_dist_from_obstacle_to_traj);
 
       const double longitudinal_distance_between_obstacles = std::abs(
-        moving_obstacle.ego_to_obstacle_distance - stopped_obstacle.ego_to_obstacle_distance);
+        moving_obstacle.longitudinal_ego_to_obstacle_distance -
+        stopped_obstacle.longitudinal_ego_to_obstacle_distance);
 
       const double moving_obstacle_speed =
         std::hypot(moving_obstacle.twist.linear.x, moving_obstacle.twist.linear.y);
@@ -1641,7 +1687,9 @@ std::optional<StopObstacle> ObstacleCruisePlannerNode::createStopObstacleForPred
       : p.max_lat_margin_for_stop;
 
   // Obstacle that is not inside of trajectory
-  if (precise_lat_dist > std::max(max_lat_margin_for_stop, 1e-3)) {
+  if (
+    precise_lat_dist > std::max(max_lat_margin_for_stop, 1e-3) ||
+    obstacle.longitudinal_ego_to_obstacle_distance < 0.0) {
     if (!isOutsideStopObstacle(obstacle.classification.label)) {
       return std::nullopt;
     }
