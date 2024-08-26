@@ -1313,7 +1313,7 @@ std::optional<CruiseObstacle> ObstacleCruisePlannerNode::createCruiseObstacle(
 
   const auto collision_points = [&]() -> std::optional<std::vector<PointWithStamp>> {
     constexpr double epsilon = 1e-6;
-    if (precise_lat_dist < epsilon && obstacle.longitudinal_ego_to_obstacle_distance >= 0.0) {
+    if (precise_lat_dist < epsilon) {
       // obstacle is inside the trajectory
       return createCollisionPointsForInsideCruiseObstacle(traj_points, traj_polys, obstacle);
     }
@@ -1661,7 +1661,6 @@ ObstacleCruisePlannerNode::createCollisionPointForOutsideStopObstacle(
       get_logger(), enable_debug_info_,
       "[Stop] Ignore outside obstacle (%s) since it will not collide with the ego.",
       object_id.c_str());
-    std::cout << "collision_time_margin: " << collision_time_margin << std::endl;
     debug_data_ptr_->intentionally_ignored_obstacles.push_back(obstacle);
     return std::nullopt;
   }
@@ -1687,9 +1686,7 @@ std::optional<StopObstacle> ObstacleCruisePlannerNode::createStopObstacleForPred
       : p.max_lat_margin_for_stop;
 
   // Obstacle that is not inside of trajectory
-  if (
-    precise_lat_dist > std::max(max_lat_margin_for_stop, 1e-3) ||
-    obstacle.longitudinal_ego_to_obstacle_distance < 0.0) {
+  if (precise_lat_dist > std::max(max_lat_margin_for_stop, 1e-3)) {
     if (!isOutsideStopObstacle(obstacle.classification.label)) {
       return std::nullopt;
     }
@@ -1741,6 +1738,14 @@ std::optional<StopObstacle> ObstacleCruisePlannerNode::createStopObstacleForPred
 
   // Obstacle inside the trajectory
   if (!isInsideStopObstacle(obstacle.classification.label)) {
+    return std::nullopt;
+  }
+
+  // ignore it if it is behind the ego
+  if (obstacle.longitudinal_ego_to_obstacle_distance < 0.0) {
+    RCLCPP_INFO_EXPRESSION(
+      get_logger(), enable_debug_info_,
+      "[Stop] Ignore inside obstacle (%s) since it's behind the ego.", object_id.c_str());
     return std::nullopt;
   }
 
